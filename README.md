@@ -9,7 +9,7 @@ from an in-game **mod browser** — no restart, no recompile. Performance-sensit
 work (deterministic combat math, A\* enemy pathfinding) lives in **C#/.NET** and
 is unit-tested independently of the engine.
 
-> Source-only project. The game runs in the Godot 4.5 editor. The Lua modding
+> Source-only project. The game runs in the Godot 4.6 editor. The Lua modding
 > layer is powered by the third-party [`lua-gdextension`](https://github.com/gilzoide/lua-gdextension)
 > addon, fetched with a one-line script (see [Running](#running)).
 
@@ -48,7 +48,7 @@ compact reference for doing it properly:
 
 ## Tech stack
 
-- **Godot 4.5** (Forward+ renderer, `.NET`/Mono build) — engine, scenes, GDScript glue.
+- **Godot 4.6** (Forward+ renderer, `.NET`/Mono build) — engine, scenes, GDScript glue.
 - **GDScript** — gameplay orchestration, entities, UI, and the mod loader/sandbox.
 - **C# / .NET 8** — `PixelForge.Core` (Godot-free algorithms) + thin Godot node adapters (`CombatResolver`, `NavGrid`).
 - **Lua 5.4** via **[`lua-gdextension`](https://github.com/gilzoide/lua-gdextension)** — sandboxed modding runtime.
@@ -78,7 +78,7 @@ pixelforge/
 
 ## Running
 
-**Requirements:** [Godot 4.5 **.NET** edition](https://godotengine.org/download) and the .NET 8 SDK.
+**Requirements:** [Godot 4.6 **.NET** edition](https://godotengine.org/download) and the .NET 8 SDK.
 
 ```bash
 # 1. Clone
@@ -89,7 +89,7 @@ cd pixelforge
 bash scripts/fetch_addons.sh
 #    ...or install "Lua GDExtension" from the Godot Asset Library in-editor.
 
-# 3. Open the project in the Godot 4.5 .NET editor and press Play (F5).
+# 3. Open the project in the Godot 4.6 .NET editor and press Play (F5).
 #    Godot builds the C# assembly on first run.
 ```
 
@@ -143,7 +143,7 @@ dotnet test tests/PixelForge.Tests/PixelForge.Tests.csproj
 
 1. **C# core** — build + xUnit tests (`DamageCalculator`, `AStarPathfinder`, `ModManifestValidator`).
 2. **Lua lint** — `luacheck` over every mod.
-3. **Godot import** — downloads Godot 4.5 (.NET) headless + the addon, builds the
+3. **Godot import** — downloads Godot 4.6 (.NET) headless + the addon, builds the
    C# solution, and imports the project so any scene/script error fails the build.
 
 ## License

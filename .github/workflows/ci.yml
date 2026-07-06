@@ -8,8 +8,10 @@ on:
   workflow_dispatch:
 
 # Godot version used to import/validate the project headlessly.
+# 4.6 matches the lua-gdextension release the project pins (its native library
+# is built against 4.6). The game's own code targets 4.5+.
 env:
-  GODOT_VERSION: "4.5-stable"
+  GODOT_VERSION: "4.6-stable"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -84,7 +86,9 @@ jobs:
           curl -fSL "${BASE}/${ZIP}" -o godot.zip
           unzip -q godot.zip
           DIR="Godot_v${GODOT_VERSION}_mono_linux_x86_64"
-          echo "GODOT_BIN=$(pwd)/${DIR}/Godot_v${GODOT_VERSION}_mono_linux.x86_64" >> "$GITHUB_ENV"
+          BIN="$(pwd)/${DIR}/Godot_v${GODOT_VERSION}_mono_linux.x86_64"
+          chmod +x "${BIN}"
+          echo "GODOT_BIN=${BIN}" >> "$GITHUB_ENV"
 
       - name: Fetch lua-gdextension addon
         run: bash scripts/fetch_addons.sh

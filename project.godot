@@ -14,7 +14,7 @@ config/name="PixelForge"
 config/description="A Godot 4 2D metroidvania with a sandboxed Lua modding layer and C#/.NET performance systems."
 config/version="0.1.0"
 run/main_scene="res://scenes/Main.tscn"
-config/features=PackedStringArray("4.5", "C#", "Forward Plus")
+config/features=PackedStringArray("4.6", "C#", "Forward Plus")
 config/icon="res://assets/icons/icon.svg"
 boot_splash/show_image=false
 

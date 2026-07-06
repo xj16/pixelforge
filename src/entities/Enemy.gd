@@ -105,15 +105,15 @@ func _check_contact_damage() -> void:
 		_target.take_damage(dmg)
 
 func _resolve_contact_damage() -> int:
-	var base := archetype.contact_damage * GameConfig.enemy_damage_scale
+	var raw: float = float(archetype.contact_damage) * GameConfig.enemy_damage_scale
 	if _world != null and _world.has_method("resolve_damage"):
 		var res: Dictionary = _world.resolve_damage({
-			"base_damage": base,
+			"base_damage": raw,
 			"element": archetype.element,
 			"variance": 0.15,
 		})
-		return int(res.get("amount", base))
-	return int(base)
+		return int(res.get("amount", raw))
+	return int(raw)
 
 ## Called by the player's attack. Applies a fixed player hit and dies at zero.
 func take_hit(source: Node) -> void:

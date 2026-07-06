@@ -16,6 +16,10 @@ read_globals = {
 -- Allow slightly longer lines for readable comments and tables.
 max_line_length = 120
 
+-- Event handlers receive (event_name, data) for API clarity even when a mod
+-- only uses `data`. Don't flag those intentionally-present arguments.
+unused_args = false
+
 -- Sample mods live under mods/. Ignore the addons folder entirely.
 exclude_files = {
 	"addons/**",
