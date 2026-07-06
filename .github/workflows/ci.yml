@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Godot version used to import/validate the project headlessly.
+env:
+  GODOT_VERSION: "4.5-stable"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Pure C# core: build + unit tests on a standard .NET runner (no Godot).
+  #    This is the fast, authoritative check for the gameplay math and the mod
+  #    manifest validator.
+  # ---------------------------------------------------------------------------
+  csharp-core:
+    name: C# core build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: |
+          dotnet restore core-lib/PixelForge.Core/PixelForge.Core.csproj
+          dotnet restore tests/PixelForge.Tests/PixelForge.Tests.csproj
+
+      - name: Build core library
+        run: dotnet build core-lib/PixelForge.Core/PixelForge.Core.csproj -c Release --no-restore
+
+      - name: Run unit tests
+        run: dotnet test tests/PixelForge.Tests/PixelForge.Tests.csproj -c Release --no-restore --verbosity normal
+
+  # ---------------------------------------------------------------------------
+  # 2. Lua lint: statically check every mod script with luacheck. The `game`
+  #    table injected by the engine is declared as a read global so mods don't
+  #    trip "undefined global" warnings.
+  # ---------------------------------------------------------------------------
+  lua-lint:
+    name: Lua mod lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Lua + luacheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.4 luarocks
+          sudo luarocks install luacheck
+
+      - name: Lint mods
+        run: luacheck mods --config .luacheckrc
+
+  # ---------------------------------------------------------------------------
+  # 3. Godot headless import: downloads the Godot .NET editor and the
+  #    lua-gdextension addon, then imports the project. Import parses every
+  #    scene and GDScript and compiles the C# assembly through Godot's build,
+  #    surfacing any script/scene error as a non-zero exit.
+  # ---------------------------------------------------------------------------
+  godot-import:
+    name: Godot headless import (.NET)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Download Godot .NET (mono) headless
+        run: |
+          set -e
+          BASE="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}"
+          ZIP="Godot_v${GODOT_VERSION}_mono_linux_x86_64.zip"
+          curl -fSL "${BASE}/${ZIP}" -o godot.zip
+          unzip -q godot.zip
+          DIR="Godot_v${GODOT_VERSION}_mono_linux_x86_64"
+          echo "GODOT_BIN=$(pwd)/${DIR}/Godot_v${GODOT_VERSION}_mono_linux.x86_64" >> "$GITHUB_ENV"
+
+      - name: Fetch lua-gdextension addon
+        run: bash scripts/fetch_addons.sh
+
+      - name: Build C# solution (Godot SDK)
+        run: dotnet build PixelForge.sln -c Debug
+
+      - name: Import project (headless)
+        run: |
+          set -e
+          # --import triggers a full resource import; --headless avoids a window.
+          # A short --quit-after budget lets the import finish then exit cleanly.
+          "${GODOT_BIN}" --headless --import --path . --quit-after 400 2>&1 | tee import.log
+
+      - name: Fail on import errors
+        run: |
+          # Godot logs script/scene parse failures as SCRIPT ERROR / ERROR lines.
+          if grep -E "SCRIPT ERROR|Parse Error|Failed to load script|Cannot open file" import.log; then
+            echo "::error::Godot reported import/parse errors"
+            exit 1
+          fi
+          echo "No import/parse errors detected."

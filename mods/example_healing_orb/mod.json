@@ -1,0 +1,9 @@
+{
+  "id": "healing_orb",
+  "name": "Healing Orb",
+  "version": "1.0.0",
+  "author": "xj16",
+  "description": "Adds a collectible healing orb that restores health and shows a message. Demonstrates item registration and the on_collect callback.",
+  "entry": "main.lua",
+  "api_requires": ["item"]
+}

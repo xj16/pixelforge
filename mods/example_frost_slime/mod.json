@@ -1,0 +1,9 @@
+{
+  "id": "frost_slime",
+  "name": "Frost Slime",
+  "version": "1.0.0",
+  "author": "xj16",
+  "description": "Adds a bouncing frost slime enemy with a custom Lua AI brain and registers the 'frost' element as extra spicy.",
+  "entry": "main.lua",
+  "api_requires": ["enemy", "combat", "config"]
+}

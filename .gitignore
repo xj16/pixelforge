@@ -1,0 +1,51 @@
+# Godot 4 -----------------------------------------------------------------
+# Imported resources and editor caches are regenerated on import.
+.godot/
+# Exported builds
+/build/
+/export/
+*.tmp
+
+# Godot .NET / C# ----------------------------------------------------------
+.mono/
+data_*/
+bin/
+obj/
+*.user
+
+# Third-party addon binaries are fetched via scripts/fetch_addons.sh
+/addons/lua-gdextension/
+
+# .NET ---------------------------------------------------------------------
+[Dd]ebug/
+[Rr]elease/
+[Xx]64/
+[Xx]86/
+project.lock.json
+*.nupkg
+*.snupkg
+.vs/
+
+# Node --------------------------------------------------------------------
+node_modules/
+dist/
+build/
+
+# Python ------------------------------------------------------------------
+__pycache__/
+.venv/
+venv/
+*.pyc
+
+# Rust / other build outputs ----------------------------------------------
+target/
+
+# Logs & OS ---------------------------------------------------------------
+*.log
+.DS_Store
+Thumbs.db
+
+# Editors -----------------------------------------------------------------
+.idea/
+.vscode/
+!.vscode/extensions.json

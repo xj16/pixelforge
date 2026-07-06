@@ -1,0 +1,18 @@
+[gd_scene load_steps=3 format=3 uid="uid://cpickupforge01"]
+
+[ext_resource type="Script" path="res://src/entities/Pickup.gd" id="1_pickup"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_pickup"]
+radius = 7.0
+
+[node name="Pickup" type="Area2D"]
+collision_layer = 16
+collision_mask = 2
+script = ExtResource("1_pickup")
+
+[node name="Collision" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_pickup")
+
+[node name="Visual" type="Polygon2D" parent="."]
+color = Color(1, 0.82, 0.29, 1)
+polygon = PackedVector2Array(0, -7, 6, 0, 0, 7, -6, 0)

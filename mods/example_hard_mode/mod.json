@@ -1,0 +1,9 @@
+{
+  "id": "hard_mode",
+  "name": "Hard Mode",
+  "version": "1.0.0",
+  "author": "xj16",
+  "description": "A balance mod: scales up enemy damage and health, and reacts to the player taking damage. Demonstrates config tweaks and event subscriptions.",
+  "entry": "main.lua",
+  "api_requires": ["config", "events"]
+}

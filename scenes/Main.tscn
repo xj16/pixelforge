@@ -1,0 +1,17 @@
+[gd_scene load_steps=5 format=3 uid="uid://cmainforge0001"]
+
+[ext_resource type="PackedScene" uid="uid://cworldforge001" path="res://scenes/World.tscn" id="1_world"]
+[ext_resource type="PackedScene" uid="uid://cplayerforge001" path="res://scenes/Player.tscn" id="2_player"]
+[ext_resource type="PackedScene" uid="uid://chudforge0001" path="res://scenes/Hud.tscn" id="3_hud"]
+[ext_resource type="PackedScene" uid="uid://cmodbrowser01" path="res://scenes/ModBrowser.tscn" id="4_modbrowser"]
+
+[node name="Main" type="Node2D"]
+
+[node name="World" parent="." instance=ExtResource("1_world")]
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+position = Vector2(64, 200)
+
+[node name="Hud" parent="." instance=ExtResource("3_hud")]
+
+[node name="ModBrowser" parent="." instance=ExtResource("4_modbrowser")]
