@@ -58,6 +58,7 @@ func install(lua: Object, mod_id: String) -> void:
 		"register_enemy": func(spec): return _register_enemy(mod_id, spec),
 		"register_item": func(spec): return _register_item(mod_id, spec),
 		"register_element": func(name, scale): _register_element(name, scale),
+		"register_status": func(element, spec): _register_status(mod_id, element, spec),
 
 		# Config tweaks -----------------------------------------------------
 		"set_config": func(key, value): _set_config(mod_id, key, value),
@@ -143,6 +144,20 @@ func _register_element(name, scale) -> void:
 	if world != null and world.has_method("set_element_scale"):
 		world.set_element_scale(str(name), float(scale))
 
+## Register the on-hit status an element carries. `spec` is a table:
+##   { kind = "slow"|"burn", magnitude = <float>, duration = <float>, interval = <float> }
+## Slow magnitude is a 0..1 speed reduction; burn magnitude is damage per tick.
+func _register_status(mod_id: String, element, spec) -> void:
+	var world := get_tree().get_first_node_in_group("world")
+	if world == null or not world.has_method("set_element_status"):
+		return
+	var d := _as_dict(spec)
+	var kind := str(d.get("kind", "slow"))
+	var magnitude := float(d.get("magnitude", 0.0))
+	var duration := float(d.get("duration", 2.0))
+	var interval := float(d.get("interval", 0.5))
+	world.set_element_status(str(element), kind, magnitude, duration, interval)
+
 func _set_config(mod_id: String, key, value) -> void:
 	var k := str(key)
 	match k:
@@ -182,16 +197,37 @@ func _dispatch_event(event_name: String, data: Dictionary) -> void:
 ## Call a bridged Lua function (LuaFunction) or a plain Callable, tolerating a
 ## missing addon by no-op'ing. lua-gdextension's LuaFunction exposes `invokev`
 ## (array form) and `invoke` (vararg); we use `invokev`.
+##
+## Every Lua-side call is wrapped in the sandbox execution budget so a runaway
+## `think`/hook/event handler aborts instead of freezing the frame. The budget
+## is armed on the owning LuaState before the call and disarmed after.
 func _call_lua(fn, args: Array) -> Variant:
 	if fn == null:
 		return null
 	if fn is Callable:
 		return fn.callv(args)
 	if fn is Object and is_instance_valid(fn):
+		var lua = _lua_state_of(fn)
+		if lua != null:
+			ModLoader.arm_budget(lua)
+		var out: Variant = null
 		if fn.has_method("invokev"):
-			return fn.invokev(args)
-		if fn.has_method("invoke"):
-			return fn.callv("invoke", args)
+			out = fn.invokev(args)
+		elif fn.has_method("invoke"):
+			out = fn.callv("invoke", args)
+		if lua != null:
+			ModLoader.disarm_budget(lua)
+		return out
+	return null
+
+## Best-effort lookup of the LuaState that owns a bridged LuaFunction so we can
+## arm its execution budget. lua-gdextension exposes it as `lua_state`.
+func _lua_state_of(fn) -> Object:
+	if fn is Object and is_instance_valid(fn):
+		if "lua_state" in fn:
+			return fn.lua_state
+		if fn.has_method("get_lua_state"):
+			return fn.get_lua_state()
 	return null
 
 ## Coerce a Lua table (LuaTable) or Dictionary into a plain Dictionary.

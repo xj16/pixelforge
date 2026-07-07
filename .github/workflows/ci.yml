@@ -38,8 +38,20 @@ jobs:
       - name: Build core library
         run: dotnet build core-lib/PixelForge.Core/PixelForge.Core.csproj -c Release --no-restore
 
-      - name: Run unit tests
-        run: dotnet test tests/PixelForge.Tests/PixelForge.Tests.csproj -c Release --no-restore --verbosity normal
+      - name: Run unit tests (with coverage)
+        run: >
+          dotnet test tests/PixelForge.Tests/PixelForge.Tests.csproj
+          -c Release --no-restore --verbosity normal
+          --collect:"XPlat Code Coverage"
+          --results-directory ./coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: csharp-coverage
+          path: ./coverage/**/coverage.cobertura.xml
+          if-no-files-found: warn
 
   # ---------------------------------------------------------------------------
   # 2. Lua lint: statically check every mod script with luacheck. The `game`
@@ -62,7 +74,44 @@ jobs:
         run: luacheck mods --config .luacheckrc
 
   # ---------------------------------------------------------------------------
-  # 3. Godot headless import: downloads the Godot .NET editor and the
+  # 3. JS modding runtime: the dependency-free browser twin of the Lua sandbox.
+  #    This is the ONE job that actually executes the modding pipeline end-to-end
+  #    (loads the real bundled mods, runs their `think` brains, enforces the
+  #    instruction budget) — the flagship system the Godot import can't exercise.
+  # ---------------------------------------------------------------------------
+  js-runtime:
+    name: JS modding runtime tests + coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Regenerate inlined bundled mods
+        run: node demo/build/gen-mods.mjs
+
+      - name: Fail if generated mods are stale
+        run: |
+          if ! git diff --quiet -- demo/engine/mods.generated.js; then
+            echo "::error::demo/engine/mods.generated.js is stale — run 'npm run gen:mods' and commit."
+            git --no-pager diff -- demo/engine/mods.generated.js
+            exit 1
+          fi
+
+      - name: Run runtime tests
+        run: node --test "tests/js/core.test.js" "tests/js/lua-lite.test.js" "tests/js/runtime.test.js"
+
+      - name: Coverage report
+        run: |
+          node --experimental-test-coverage \
+            "tests/js/core.test.js" "tests/js/lua-lite.test.js" "tests/js/runtime.test.js" \
+            2>&1 | sed -n '/start of coverage/,/end of coverage/p'
+
+  # ---------------------------------------------------------------------------
+  # 4. Godot headless import: downloads the Godot .NET editor and the
   #    lua-gdextension addon, then imports the project. Import parses every
   #    scene and GDScript and compiles the C# assembly through Godot's build,
   #    surfacing any script/scene error as a non-zero exit.

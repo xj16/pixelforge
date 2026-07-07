@@ -72,10 +72,34 @@ func resolve_damage(packet: Dictionary) -> Dictionary:
 	return {"amount": int(packet.get("base_damage", 0)), "is_crit": false,
 		"element": packet.get("element", "physical"), "blocked": false}
 
+## Resolve a damage packet AND apply the element's status effect (if any) to the
+## given actor id. Used when the player hits an enemy so frost/burn kick in.
+func resolve_damage_on(packet: Dictionary, actor_id: int) -> Dictionary:
+	if _combat != null and _combat.has_method("ResolveOn"):
+		return _combat.call("ResolveOn", packet, actor_id)
+	return resolve_damage(packet)
+
+## Advance an actor's status effects one frame and return {damage, speed_factor}.
+func tick_status(actor_id: int, delta: float) -> Dictionary:
+	if _combat != null and _combat.has_method("Tick"):
+		return _combat.call("Tick", actor_id, delta)
+	return {"damage": 0, "speed_factor": 1.0, "active": 0}
+
+## Drop every status effect on an actor (called on enemy death).
+func clear_status(actor_id: int) -> void:
+	if _combat != null and _combat.has_method("ClearStatus"):
+		_combat.call("ClearStatus", actor_id)
+
 ## Register/override a global element multiplier (used by ModApi).
 func set_element_scale(element: String, scale: float) -> void:
 	if _combat != null:
 		_combat.call("SetElementScale", element, scale)
+
+## Register the status an element inflicts on hit (used by ModApi).
+## `kind` is "slow" or "burn".
+func set_element_status(element: String, kind: String, magnitude: float, duration: float, interval: float) -> void:
+	if _combat != null and _combat.has_method("SetElementStatus"):
+		_combat.call("SetElementStatus", element, kind, magnitude, duration, interval)
 
 ## Return a world-space step vector toward `to`, routed by the C# NavGrid.
 func next_path_step(from: Vector2, to: Vector2) -> Vector2:

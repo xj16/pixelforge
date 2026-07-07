@@ -43,6 +43,13 @@ public sealed class DamageCalculator
 
     private readonly DeterministicRng _rng;
 
+    /// <summary>
+    /// Ongoing status effects (frost slow, burn DoT) driven by element hits.
+    /// Exposed so the game and mods can tick/apply effects through the same
+    /// deterministic engine the combat math uses.
+    /// </summary>
+    public StatusEngine Status { get; } = new();
+
     public DamageCalculator(ulong seed = 0) => _rng = new DeterministicRng(seed);
 
     public void Reseed(ulong seed) => _rng.Reseed(seed);
@@ -53,6 +60,20 @@ public sealed class DamageCalculator
 
     public float GetElementScale(string element)
         => _elementScale.TryGetValue(element, out float s) ? s : 1.0f;
+
+    /// <summary>
+    /// Resolve an attack and, if it landed and its element carries a status
+    /// recipe, apply that status to <paramref name="targetActorId"/>. Returns the
+    /// same <see cref="DamageResult"/> as <see cref="Resolve"/>. This is the
+    /// single call the combat pipeline uses so damage and status stay in lockstep.
+    /// </summary>
+    public DamageResult ResolveAndApply(in AttackInput attack, int targetActorId)
+    {
+        DamageResult r = Resolve(attack);
+        if (!r.Blocked)
+            Status.ApplyElement(targetActorId, r.Element);
+        return r;
+    }
 
     public DamageResult Resolve(in AttackInput attack)
     {

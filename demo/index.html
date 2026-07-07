@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PixelForge — Live Modding Demo</title>
+<style>
+  :root {
+    --bg: #0d1017; --panel: #151a23; --panel2: #1b212d; --line: #262e3d;
+    --text: #e6e9ef; --muted: #8b94a7; --accent: #5bc9e6; --accent2: #66e08a;
+    --danger: #e06a6a; --warn: #e0a44a; --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); }
+  header { padding: 14px 20px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .3px; }
+  header .tag { color: var(--muted); font-size: 13px; }
+  header .spacer { flex: 1; }
+  header a.gh { color: var(--muted); text-decoration: none; font-size: 13px;
+    border: 1px solid var(--line); padding: 5px 10px; border-radius: 7px; }
+  header a.gh:hover { color: var(--text); border-color: var(--accent); }
+  .wrap { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(320px, .85fr);
+    gap: 16px; padding: 16px; align-items: start; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted);
+    margin: 0; padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--panel2); }
+  .stage { position: relative; background: #0a0c12; }
+  canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  .hud { position: absolute; left: 12px; top: 10px; right: 12px; display: flex; gap: 12px;
+    align-items: center; pointer-events: none; font-size: 13px; }
+  .bar { flex: 0 0 160px; height: 12px; border-radius: 6px; background: #2a1c1c; overflow: hidden; border: 1px solid #402; }
+  .bar > i { display: block; height: 100%; background: linear-gradient(90deg,#e06a6a,#f0a); width: 100%; transition: width .1s; }
+  .hud .msg { color: var(--accent2); text-shadow: 0 1px 2px #000; }
+  .hud .win { color: #ffe66a; font-weight: 700; }
+  .controls { padding: 10px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px;
+    display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .controls kbd { font-family: var(--mono); background: var(--panel2); border: 1px solid var(--line);
+    border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--text); font-size: 11px; }
+  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 14px; border-top: 1px solid var(--line); }
+  button { font: inherit; font-size: 13px; cursor: pointer; color: var(--text);
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #16323a; border-color: #26707f; color: #cdeef5; }
+  button.primary:hover { background: #1b414c; }
+  button.danger { color: #f2b8b8; border-color: #5a2b2b; background: #241717; }
+  button.danger:hover { border-color: var(--danger); }
+  .mods { padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow: auto; }
+  .mod { border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; background: var(--panel2);
+    display: flex; gap: 10px; align-items: flex-start; }
+  .mod .sw { width: 12px; height: 12px; border-radius: 3px; margin-top: 3px; flex: 0 0 auto; box-shadow: 0 0 0 1px #0006 inset; }
+  .mod .body { flex: 1; min-width: 0; }
+  .mod .title { font-size: 13.5px; font-weight: 600; }
+  .mod .meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .mod .counts { font-size: 11.5px; color: var(--accent); margin-top: 3px; }
+  .mod .err { font-size: 11.5px; color: var(--danger); margin-top: 4px; font-family: var(--mono); word-break: break-word; }
+  .mod input[type=checkbox] { accent-color: var(--accent); margin-top: 2px; }
+  .editor { display: flex; flex-direction: column; }
+  .editor .tabs { display: flex; gap: 4px; padding: 8px 10px 0; }
+  .editor .tabs button { border-bottom-left-radius: 0; border-bottom-right-radius: 0; padding: 6px 12px; font-size: 12.5px; }
+  .editor .tabs button.active { background: #0f1620; border-color: var(--line); border-bottom-color: #0f1620; color: var(--accent); }
+  textarea { width: 100%; min-height: 260px; resize: vertical; border: 1px solid var(--line);
+    background: #0f1620; color: #d6e2ea; font-family: var(--mono); font-size: 12.5px; line-height: 1.5;
+    padding: 12px; margin: 0 10px 10px; width: calc(100% - 20px); border-radius: 9px; tab-size: 2; }
+  .console { font-family: var(--mono); font-size: 12px; padding: 10px 12px; max-height: 150px; overflow: auto;
+    border-top: 1px solid var(--line); background: #0a0d13; }
+  .console .info { color: #9fb0c2; } .console .warn { color: var(--warn); }
+  .console .error { color: var(--danger); } .console .sys { color: var(--accent2); }
+  .hint { color: var(--muted); font-size: 12px; padding: 0 14px 12px; }
+  .pill { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 20px; padding: 2px 9px; }
+  .pill.ok { color: var(--accent2); border-color: #2c5a3a; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚒️ PixelForge</h1>
+  <span class="tag">sandboxed Lua modding, live in your browser — no engine, no install</span>
+  <span class="spacer"></span>
+  <span id="perf" class="pill">—</span>
+  <a class="gh" href="https://github.com/xj16/pixelforge" target="_blank" rel="noopener">GitHub ↗</a>
+</header>
+
+<div class="wrap">
+  <!-- LEFT: the game -->
+  <section class="card">
+    <h2>The game</h2>
+    <div class="stage">
+      <canvas id="game" width="576" height="288"></canvas>
+      <div class="hud">
+        <div class="bar"><i id="hpfill"></i></div>
+        <span id="hudmsg" class="msg"></span>
+        <span id="hudwin" class="win"></span>
+      </div>
+    </div>
+    <div class="controls">
+      <span><kbd>A</kbd><kbd>D</kbd> move</span>
+      <span><kbd>Space</kbd> jump</span>
+      <span><kbd>J</kbd> attack</span>
+      <span><kbd>K</kbd> dash</span>
+      <span><kbd>R</kbd> reload mods</span>
+      <span class="spacer" style="flex:1"></span>
+      <span id="statline"></span>
+    </div>
+    <div class="btnrow">
+      <button class="primary" id="reload">↻ Hot-reload mods</button>
+      <button id="record">● Record run</button>
+      <button id="replay">▶ Replay last run</button>
+      <button class="danger" id="evil">💣 Inject infinite loop</button>
+      <button id="reset">Reset level</button>
+    </div>
+  </section>
+
+  <!-- RIGHT: mods + editor + console -->
+  <section style="display:flex; flex-direction:column; gap:16px;">
+    <div class="card">
+      <h2>Mod browser <span id="modcount" class="pill" style="float:right"></span></h2>
+      <div class="mods" id="modlist"></div>
+    </div>
+
+    <div class="card editor">
+      <h2>Live mod editor</h2>
+      <p class="hint">Edit this real Lua mod, then <b>Hot-reload</b> (or press <kbd>R</kbd>). It runs in its own
+        sandboxed interpreter with an instruction budget — try an infinite loop and watch the game survive.</p>
+      <div class="tabs">
+        <button data-tab="lua" class="active">main.lua</button>
+        <button data-tab="json">mod.json</button>
+      </div>
+      <textarea id="ed-lua" spellcheck="false"></textarea>
+      <textarea id="ed-json" spellcheck="false" style="display:none; min-height:120px;"></textarea>
+    </div>
+
+    <div class="card">
+      <h2>Mod console</h2>
+      <div class="console" id="console"></div>
+    </div>
+  </section>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>

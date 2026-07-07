@@ -1,0 +1,61 @@
+name: Deploy live demo to GitHub Pages
+
+# Publishes the dependency-free in-browser modding demo (demo/) to GitHub Pages
+# on every push to main. The demo is pure static HTML/JS — no build step, no
+# server — so this just uploads the folder after regenerating the inlined mods.
+#
+# (The native Godot WebGL export lives in a separate job below; lua-gdextension
+# is a native GDExtension that does not run in the web export, which is exactly
+# why the portfolio demo ships the pure-JS runtime twin instead.)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-demo:
+    name: Build static demo bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Regenerate inlined bundled mods
+        run: node demo/build/gen-mods.mjs
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp -R demo/* _site/
+          echo "Built static demo:" && find _site -maxdepth 2 -type f | sort
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to Pages
+    needs: build-demo
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

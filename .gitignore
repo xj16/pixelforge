@@ -28,8 +28,9 @@ project.lock.json
 
 # Node --------------------------------------------------------------------
 node_modules/
-dist/
-build/
+/dist/
+# NOTE: intentionally NOT ignoring a bare `build/` — the demo keeps its mod
+# generator under demo/build/, which is source, not a build artifact.
 
 # Python ------------------------------------------------------------------
 __pycache__/

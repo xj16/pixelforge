@@ -16,6 +16,8 @@ var _think_interval := 0.15
 var _state := {}                  # persistent per-enemy scratch space for Lua
 var _target: Node2D
 var _world                        # World node (holds NavGrid + CombatResolver)
+var _speed_factor := 1.0          # current status slow factor (1.0 = unslowed)
+var _base_color: Color = Color.WHITE
 
 @onready var _sprite: Polygon2D = $Body
 
@@ -28,13 +30,16 @@ func setup(arch, world) -> void:
 func _ready() -> void:
 	add_to_group("enemy")
 	_health = int(archetype.max_health * GameConfig.enemy_health_scale)
-	_sprite.color = archetype.color
+	_base_color = archetype.color
+	_sprite.color = _base_color
 	_target = get_tree().get_first_node_in_group("player")
 	EventBus.enemy_spawned.emit(self)
 
 func _physics_process(delta: float) -> void:
 	if not is_instance_valid(_target):
 		_target = get_tree().get_first_node_in_group("player")
+
+	_tick_status(delta)
 
 	if not archetype.can_fly and not is_on_floor():
 		velocity.y = minf(velocity.y + GameConfig.GRAVITY * delta, GameConfig.MAX_FALL_SPEED)
@@ -44,8 +49,31 @@ func _physics_process(delta: float) -> void:
 		_think_accum = 0.0
 		_decide()
 
+	# Apply any active slow to horizontal movement (frost etc.).
+	velocity.x *= _speed_factor
 	move_and_slide()
 	_check_contact_damage()
+
+## Advance this enemy's status effects (frost slow, burn DoT) through the C#
+## StatusEngine each frame. DoT that lands is applied here; the slow factor is
+## cached for the movement step. A frost-slowed enemy also tints toward blue.
+func _tick_status(delta: float) -> void:
+	_speed_factor = 1.0
+	if _world == null or not _world.has_method("tick_status"):
+		return
+	var res: Dictionary = _world.tick_status(get_instance_id(), delta)
+	_speed_factor = float(res.get("speed_factor", 1.0))
+	var dot := int(res.get("damage", 0))
+	if dot > 0:
+		_health -= dot
+		if _health <= 0:
+			_kill()
+			return
+	# Visual feedback: tint toward frost-blue while slowed.
+	if _speed_factor < 0.999:
+		_sprite.color = _base_color.lerp(Color("#5bc9e6"), 0.5)
+	else:
+		_sprite.color = _base_color
 
 func _decide() -> void:
 	if _target == null:
@@ -116,14 +144,22 @@ func _resolve_contact_damage() -> int:
 	return int(raw)
 
 ## Called by the player's attack. Applies a fixed player hit and dies at zero.
+## The strike carries the enemy archetype's element, so a mod that registered a
+## status for that element (e.g. frost -> slow) sees it applied to this enemy.
 func take_hit(source: Node) -> void:
 	var dmg := 18
-	if _world != null and _world.has_method("resolve_damage"):
-		var res: Dictionary = _world.resolve_damage({
+	if _world != null and _world.has_method("resolve_damage_on"):
+		var res: Dictionary = _world.resolve_damage_on({
 			"base_damage": 18,
-			"element": "physical",
+			"element": archetype.element,
 			"crit_chance": 0.2,
 			"crit_mult": 2.0,
+		}, get_instance_id())
+		dmg = int(res.get("amount", 18))
+	elif _world != null and _world.has_method("resolve_damage"):
+		var res: Dictionary = _world.resolve_damage({
+			"base_damage": 18, "element": "physical",
+			"crit_chance": 0.2, "crit_mult": 2.0,
 		})
 		dmg = int(res.get("amount", 18))
 	_health -= dmg
@@ -135,6 +171,8 @@ func take_hit(source: Node) -> void:
 		_kill()
 
 func _kill() -> void:
+	if _world != null and _world.has_method("clear_status"):
+		_world.clear_status(get_instance_id())
 	EventBus.enemy_killed.emit(archetype.id, global_position)
 	EventBus.emit_game_event("enemy_killed", {
 		"enemy_id": archetype.id, "position": global_position,

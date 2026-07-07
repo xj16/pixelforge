@@ -15,6 +15,15 @@ game.log("frost_slime loading...")
 -- Make frost hits land a little harder than physical.
 game.register_element("frost", 1.25)
 
+-- Give the frost element an on-hit status: a 40% slow for 2 seconds. When the
+-- player strikes a frost enemy, it visibly chills and crawls. This drives the
+-- C# StatusEngine through the curated API -- no engine access required.
+game.register_status("frost", {
+	kind = "slow",
+	magnitude = 0.4,
+	duration = 2.0,
+})
+
 -- The AI brain. Called on every think tick with a context table:
 --   ctx.self_pos    Vector2   this enemy's position
 --   ctx.target_pos  Vector2   the player's position

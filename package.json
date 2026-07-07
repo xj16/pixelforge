@@ -1,0 +1,15 @@
+{
+  "name": "pixelforge-runtime",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dependency-free JS twin of PixelForge's sandboxed Lua modding runtime — powers the in-browser live demo and is the CI-tested reference for the modding contract.",
+  "scripts": {
+    "gen:mods": "node demo/build/gen-mods.mjs",
+    "test": "npm run gen:mods && node --test \"tests/js/**/*.test.js\"",
+    "coverage": "npm run gen:mods && node --experimental-test-coverage --test-reporter=spec \"tests/js/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

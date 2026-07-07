@@ -7,6 +7,12 @@ public readonly record struct GridCoord(int X, int Y);
 /// A* over an 8-connected tile grid, with optional "must stand on ground"
 /// constraint for platformer walkers. Godot-free so it can be unit-tested.
 /// The Godot <c>NavGrid</c> node wraps this and translates to Vector2I.
+///
+/// Allocation model: the per-search buffers (gScore/cameFrom/heap) are allocated
+/// once at construction and reused on every <see cref="FindPath"/> via a
+/// generational "visited" stamp — re-planning a route (the game does this every
+/// ~0.15s per grounded enemy) touches zero new heap allocations after warm-up.
+/// The only allocation a search makes is the returned path list.
 /// </summary>
 public sealed class AStarPathfinder
 {
@@ -16,13 +22,29 @@ public sealed class AStarPathfinder
     private readonly bool[] _groundBelow;
     private readonly bool _allowFlying;
 
+    // Pooled search state, reused across calls. `_seen[i] == _generation` marks
+    // a cell touched by the current search, so we never re-clear the arrays.
+    private readonly float[] _gScore;
+    private readonly int[] _cameFrom;
+    private readonly int[] _seen;      // generation stamp per cell
+    private readonly bool[] _closed;
+    private readonly MinHeap _open;
+    private int _generation;
+
     public AStarPathfinder(int width, int height, bool allowFlying)
     {
         _width = Math.Max(1, width);
         _height = Math.Max(1, height);
-        _blocked = new bool[_width * _height];
-        _groundBelow = new bool[_width * _height];
+        int n = _width * _height;
+        _blocked = new bool[n];
+        _groundBelow = new bool[n];
         _allowFlying = allowFlying;
+
+        _gScore = new float[n];
+        _cameFrom = new int[n];
+        _seen = new int[n];
+        _closed = new bool[n];
+        _open = new MinHeap(n);
     }
 
     public int Width => _width;
@@ -50,6 +72,20 @@ public sealed class AStarPathfinder
         return _allowFlying || _groundBelow[Index(x, y)];
     }
 
+    // Read gScore for a cell, treating any cell not yet touched this generation
+    // as +infinity without having to pre-fill the whole array.
+    private float GScore(int i) => _seen[i] == _generation ? _gScore[i] : float.PositiveInfinity;
+
+    private void Touch(int i, float g, int from)
+    {
+        _seen[i] = _generation;
+        _gScore[i] = g;
+        _cameFrom[i] = from;
+        _closed[i] = false;
+    }
+
+    private bool Closed(int i) => _seen[i] == _generation && _closed[i];
+
     /// <summary>
     /// Returns a path from start (exclusive) to target (inclusive), or an empty
     /// list if no route exists. Coordinates are grid cells.
@@ -60,35 +96,34 @@ public sealed class AStarPathfinder
         if (!InBounds(sx, sy) || !InBounds(tx, ty) || IsBlocked(tx, ty))
             return result;
 
+        // Advance the generation so all pooled state reads as "unvisited" again.
+        // The +1 wraps safely; on the (astronomically rare) wrap to 0 we reset.
+        unchecked { _generation++; }
+        if (_generation == 0)
+        {
+            Array.Clear(_seen, 0, _seen.Length);
+            _generation = 1;
+        }
+        _open.Clear();
+
         int start = Index(sx, sy);
         int goal = Index(tx, ty);
-        int n = _width * _height;
 
-        var gScore = new float[n];
-        var cameFrom = new int[n];
-        var closed = new bool[n];
-        for (int i = 0; i < n; i++)
-        {
-            gScore[i] = float.PositiveInfinity;
-            cameFrom[i] = -1;
-        }
-
-        var open = new MinHeap(n);
-        gScore[start] = 0f;
-        open.Push(start, Heuristic(sx, sy, tx, ty));
+        Touch(start, 0f, -1);
+        _open.Push(start, Heuristic(sx, sy, tx, ty));
 
         ReadOnlySpan<int> dx = [1, -1, 0, 0, 1, 1, -1, -1];
         ReadOnlySpan<int> dy = [0, 0, 1, -1, 1, -1, 1, -1];
         ReadOnlySpan<float> cost = [1, 1, 1, 1, 1.41421f, 1.41421f, 1.41421f, 1.41421f];
 
-        while (open.Count > 0)
+        while (_open.Count > 0)
         {
-            int current = open.Pop();
+            int current = _open.Pop();
             if (current == goal)
-                return Reconstruct(cameFrom, current);
-            if (closed[current])
+                return Reconstruct(current);
+            if (Closed(current))
                 continue;
-            closed[current] = true;
+            _closed[current] = true;
 
             int cx = current % _width;
             int cy = current / _width;
@@ -103,15 +138,14 @@ public sealed class AStarPathfinder
                     continue; // no diagonal corner cutting
 
                 int ni = Index(nx, ny);
-                if (closed[ni])
+                if (Closed(ni))
                     continue;
 
-                float tentative = gScore[current] + cost[d];
-                if (tentative < gScore[ni])
+                float tentative = GScore(current) + cost[d];
+                if (tentative < GScore(ni))
                 {
-                    gScore[ni] = tentative;
-                    cameFrom[ni] = current;
-                    open.Push(ni, tentative + Heuristic(nx, ny, tx, ty));
+                    Touch(ni, tentative, current);
+                    _open.Push(ni, tentative + Heuristic(nx, ny, tx, ty));
                 }
             }
         }
@@ -128,13 +162,13 @@ public sealed class AStarPathfinder
         return (max - min) + 1.41421f * min;
     }
 
-    private List<GridCoord> Reconstruct(int[] cameFrom, int current)
+    private List<GridCoord> Reconstruct(int current)
     {
         var stack = new List<GridCoord>();
         while (current != -1)
         {
             stack.Add(new GridCoord(current % _width, current / _width));
-            current = cameFrom[current];
+            current = _cameFrom[current];
         }
         var path = new List<GridCoord>(stack.Count);
         for (int i = stack.Count - 2; i >= 0; i--)
@@ -142,7 +176,7 @@ public sealed class AStarPathfinder
         return path;
     }
 
-    /// <summary>Binary min-heap keyed by f-score.</summary>
+    /// <summary>Binary min-heap keyed by f-score. Reused across searches.</summary>
     private sealed class MinHeap
     {
         private int[] _node;
@@ -157,6 +191,8 @@ public sealed class AStarPathfinder
         }
 
         public int Count => _count;
+
+        public void Clear() => _count = 0;
 
         public void Push(int node, float prio)
         {

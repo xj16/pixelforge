@@ -75,6 +75,23 @@ LuaJIT `ffi`, and Godot singletons/classes/local-path loaders. A mod therefore
 **cannot** read or write files, run processes, load native code, or grab
 arbitrary engine objects. Everything it can affect goes through `game.*`.
 
+> The loader opens `LUA_DEBUG` **only** to install the CPU-budget hook (below),
+> then deletes the `debug` library from the sandbox — a mod never sees it.
+
+### Execution budget (you can't freeze the game)
+
+Every entry into your mod's code — the initial load, each `think` tick, each
+event handler, and lifecycle hooks — runs under a **wall-clock budget** enforced
+by an instruction-count hook. If a call runs too long (e.g. an accidental
+`while true do end`), it is **aborted with an error**, the mod is **disabled**,
+and the error is shown in the mod browser. The rest of the game keeps running.
+
+Practical implications:
+
+- Keep `think` cheap — it's called ~7×/second per enemy.
+- Don't busy-wait or spin; there are no threads and no `os.clock`.
+- A load error or a runaway call disables *only your mod*, never the game.
+
 ## The `game` API
 
 > In Lua, call methods on values with `:` but call these top-level `game`
@@ -135,6 +152,27 @@ game.register_element("frost", 1.25)  -- new/overridden global damage multiplier
 
 Registered elements feed the C# `CombatResolver`, so any attack using that
 element is scaled accordingly.
+
+### On-hit status effects
+
+Give an element an ongoing effect that lands when a hit connects:
+
+```lua
+-- A 40% slow for 2 seconds:
+game.register_status("frost", { kind = "slow", magnitude = 0.4, duration = 2.0 })
+-- A burn: 3 damage every 0.5s for 2s:
+game.register_status("fire",  { kind = "burn", magnitude = 3, duration = 2.0, interval = 0.5 })
+```
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | `"slow"` or `"burn"`. |
+| `magnitude` | Slow: 0–1 fractional speed reduction. Burn: damage per tick. |
+| `duration` | Seconds the effect lasts. |
+| `interval` | Burn only: seconds between ticks (default `0.5`). |
+
+Effects are ticked by the deterministic C# `StatusEngine`. Multiple slows compound
+multiplicatively; multiple burns sum. A slowed enemy visibly chills (tints blue).
 
 ### Config tweaks
 

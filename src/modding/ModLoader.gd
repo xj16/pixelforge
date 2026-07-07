@@ -46,21 +46,63 @@ var _disabled_ids: Dictionary = {}
 ## plus the Godot data helpers a mod legitimately needs:
 ##   GODOT_VARIANT(1<<13) GODOT_UTILITY_FUNCTIONS(1<<14) GODOT_ENUMS(1<<17)
 ##
-## We intentionally OMIT LUA_IO, LUA_OS, LUA_PACKAGE, LUA_DEBUG, LUA_FFI,
+## We intentionally OMIT LUA_IO, LUA_OS, LUA_PACKAGE, LUA_FFI,
 ## GODOT_SINGLETONS, GODOT_CLASSES and GODOT_LOCAL_PATHS so a mod cannot read the
 ## filesystem, spawn processes, load native modules, or grab arbitrary engine
 ## singletons/classes. This is the security boundary of the modding sandbox.
+##
+## LUA_DEBUG(1<<7) IS opened, but ONLY so our privileged budget preamble can
+## install an instruction-count hook (see BUDGET_PREAMBLE). The preamble then
+## deletes the `debug` table from the sandbox globals, so a mod can neither see
+## it nor clear its own hook — it just pays the CPU budget we set.
 const SANDBOX_LIBRARIES: int = (
 	(1 << 0)   # LUA_BASE
 	| (1 << 6) # LUA_TABLE
 	| (1 << 3) # LUA_STRING
 	| (1 << 5) # LUA_MATH
 	| (1 << 2) # LUA_COROUTINE
+	| (1 << 7) # LUA_DEBUG (consumed by the budget preamble, then removed)
 	| (1 << 12) # LUA_UTF8
 	| (1 << 13) # GODOT_VARIANT
 	| (1 << 14) # GODOT_UTILITY_FUNCTIONS
 	| (1 << 17) # GODOT_ENUMS
 )
+
+## Per-call wall-clock budget in milliseconds. A mod chunk (load, `think`, or a
+## hook) that runs longer than this is aborted with an error instead of freezing
+## the frame. 250ms is generous for real work yet a `while true do end` trips it
+## almost immediately (the hook fires every 1000 VM instructions).
+const CALL_BUDGET_MS: int = 250
+
+## Privileged Lua preamble prepended to every mod's entry chunk. It installs an
+## instruction-count debug hook that, every 1000 VM instructions, asks the
+## engine (via the injected `__pf_deadline` callable) whether this call's
+## wall-clock budget is spent and errors if so. It then captures the callable
+## into the hook's closure and DELETES both `debug` and `__pf_deadline` from the
+## sandbox, so a mod can neither disable the hook nor reach the timing callable.
+## GDScript re-arms the deadline before every guarded call — see arm_budget().
+const BUDGET_PREAMBLE: String = """
+do
+	local dbg = rawget(_G, "debug")
+	local deadline = rawget(_G, "__pf_deadline")
+	-- Only arm the guard when both facilities are present; otherwise degrade to
+	-- an unguarded (but still library-restricted) sandbox rather than failing.
+	if type(dbg) == "table" and type(dbg.sethook) == "function" and type(deadline) == "function" then
+		local sethook = dbg.sethook
+		local function guard()
+			if deadline() then
+				error("execution budget exceeded (possible infinite loop) -- mod aborted", 2)
+			end
+		end
+		sethook(guard, "", 1000)
+	end
+	-- Slam the sandbox door: the mod must never see debug or the timing hook.
+	debug = nil
+	_G.debug = nil
+	__pf_deadline = nil
+	_G.__pf_deadline = nil
+end
+"""
 
 func _ready() -> void:
 	lua_available = ClassDB.class_exists("LuaState")
@@ -190,10 +232,20 @@ func _load_mod(mod: Mod) -> void:
 	# Inject the curated modding surface as the global `game` table.
 	ModApi.install(lua, mod.id)
 
+	# Install the wall-clock budget guard: expose the deadline callable, run the
+	# preamble to arm the debug hook, then the preamble deletes the callable and
+	# the debug library so the mod can neither reach nor disable them.
+	_install_budget_guard(lua)
+
 	var entry_path := mod.dir.path_join(mod.entry)
 	var script := FileAccess.get_file_as_string(entry_path)
+	# Arm the budget for the load chunk (the preamble + the mod's top level), then
+	# run both as one chunk so a runaway on_load aborts instead of freezing.
+	arm_budget(lua)
+	var guarded := BUDGET_PREAMBLE + "\n" + script
 	# do_string(chunk, chunkname) — chunkname makes Lua error messages readable.
-	var result = lua.do_string(script, "%s/%s" % [mod.id, mod.entry])
+	var result = lua.do_string(guarded, "%s/%s" % [mod.id, mod.entry])
+	disarm_budget(lua)
 	if _is_lua_error(result):
 		mod.error = "Lua error: " + str(result)
 		mod.lua_state = null
@@ -204,11 +256,41 @@ func _load_mod(mod: Mod) -> void:
 	# Give the mod a chance to run its registration hook if it defined one.
 	ModApi.invoke_mod_hook_for(mod.id, "on_load")
 
+# --- Sandbox execution budget ---------------------------------------------
+
+## Per-LuaState deadline (msec since engine start). >0 means a guarded call is in
+## flight; the injected `__pf_deadline` callable compares against Time.get_ticks_msec().
+var _deadlines: Dictionary = {}   # LuaState -> int deadline_msec
+
+## Give the sandbox a `__pf_deadline()` global that returns true once this call's
+## wall-clock budget is spent. The preamble captures it and then removes it.
+func _install_budget_guard(lua: Object) -> void:
+	if lua == null:
+		return
+	var self_ref := self
+	var check := func() -> bool:
+		var d: int = self_ref._deadlines.get(lua, 0)
+		return d > 0 and Time.get_ticks_msec() > d
+	lua.globals["__pf_deadline"] = check
+
+## Start the budget clock for the next guarded call on this sandbox.
+func arm_budget(lua: Object) -> void:
+	if lua == null or not lua_available:
+		return
+	_deadlines[lua] = Time.get_ticks_msec() + CALL_BUDGET_MS
+
+## Stop the budget clock (call finished). Leaves the hook installed but idle.
+func disarm_budget(lua: Object) -> void:
+	if lua == null:
+		return
+	_deadlines[lua] = 0
+
 func _unload_all() -> void:
 	for mod in mods:
 		if mod.lua_state != null:
 			ModApi.invoke_mod_hook_for(mod.id, "on_unload")
 			ModApi.forget_mod(mod.id)
+			_deadlines.erase(mod.lua_state)
 			mod.lua_state = null
 
 func _is_lua_error(value) -> bool:

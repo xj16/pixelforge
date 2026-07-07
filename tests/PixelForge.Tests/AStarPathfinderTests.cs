@@ -92,4 +92,38 @@ public class AStarPathfinderTests
         Assert.Empty(grid.FindPath(-1, 0, 2, 2));
         Assert.Empty(grid.FindPath(0, 0, 99, 2));
     }
+
+    [Fact]
+    public void RepeatedSearches_AreStable_WithPooledBuffers()
+    {
+        // The pooled generational-stamp buffers must reset cleanly between calls:
+        // re-planning the same route many times yields the same answer, and an
+        // interleaved different route doesn't corrupt state.
+        var grid = OpenFlyingGrid(8, 8);
+        for (int y = 0; y < 6; y++) grid.SetBlocked(4, y, true); // vertical wall, gap at bottom
+
+        var first = grid.FindPath(0, 0, 7, 0);
+        for (int i = 0; i < 25; i++)
+        {
+            grid.FindPath(1, 1, 6, 6);              // different query in between
+            var again = grid.FindPath(0, 0, 7, 0);  // must match the very first
+            Assert.Equal(first.Count, again.Count);
+            for (int k = 0; k < first.Count; k++)
+                Assert.Equal(first[k], again[k]);
+        }
+    }
+
+    [Fact]
+    public void ManyReplans_DoNotThrow_OrDrift()
+    {
+        // Simulates the game re-planning every AI tick for a long run.
+        var grid = new AStarPathfinder(20, 12, allowFlying: false);
+        for (int x = 0; x < 20; x++) grid.SetGroundBelow(x, 5, true);
+        for (int i = 0; i < 2000; i++)
+        {
+            var path = grid.FindPath(0, 5, 19, 5);
+            Assert.NotEmpty(path);
+            Assert.Equal(new GridCoord(19, 5), path[^1]);
+        }
+    }
 }
