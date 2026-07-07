@@ -49,8 +49,10 @@ public sealed class ReplayRecorder
     public ReplayRecorder(ulong seed) => Seed = seed;
 
     /// <summary>
-    /// Record the buttons held on <paramref name="frame"/>. Only stored when the
-    /// state differs from the previous frame (delta compression).
+    /// Record the buttons held on <paramref name="frame"/> as a bitmask (see
+    /// <see cref="InputButton"/>). Only stored when the state differs from the
+    /// previous frame (delta compression). Use <see cref="Buttons"/> to build the
+    /// mask from the typed flags.
     /// </summary>
     public void Record(int frame, uint bits)
     {
@@ -62,8 +64,8 @@ public sealed class ReplayRecorder
         }
     }
 
-    /// <summary>Convenience overload accepting the typed flags.</summary>
-    public void Record(int frame, InputButton buttons) => Record(frame, (uint)buttons);
+    /// <summary>Convenience: pack typed flags into a bitmask for <see cref="Record"/>.</summary>
+    public static uint Buttons(InputButton buttons) => (uint)buttons;
 
     /// <summary>Serialize the whole recording to the text replay format.</summary>
     public string Serialize()
